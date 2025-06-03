@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/detectionscreen.dart';
+import 'package:lottie/lottie.dart';
+import 'dart:math' as math;
 
-
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
 
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -14,10 +20,12 @@ class HomeScreen extends StatelessWidget {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Color(0xFF1565C0),
-              Color(0xFF0D47A1),
-              Color(0xFF1A237E),
+              Color(0xFF0a0a0a),
+              Color(0xFF1a1a2e),
+              Color(0xFF16213e),
+              Color(0xFF0f3460),
             ],
+            stops: [0.0, 0.3, 0.7, 1.0],
           ),
         ),
         child: SafeArea(
@@ -27,110 +35,177 @@ class HomeScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  const SizedBox(height: 40),
-                  
-                  // Hero section
+                  const SizedBox(height: 20),
+
+                  // Hero section with Lottie animation
                   Container(
                     padding: const EdgeInsets.all(32),
                     child: Column(
                       children: [
-                        // App icon/logo
-                        Container(
-                          width: 120,
-                          height: 120,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.white.withOpacity(0.2),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.3),
-                              width: 2,
+                        // Lottie animation
+                        SizedBox(
+                          width: 180,
+                          height: 180,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              // Lottie animation
+                              Container(
+                                width: 120,
+                                height: 120,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: const LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [
+                                      Color(0xFF667eea),
+                                      Color(0xFF764ba2),
+                                    ],
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.blue.withOpacity(0.8),
+                                      blurRadius: 30,
+                                      spreadRadius: 5,
+                                    ),
+                                    BoxShadow(
+                                      color: Colors.purple.withOpacity(0.4),
+                                      blurRadius: 50,
+                                      spreadRadius: 10,
+                                    ),
+                                  ],
+                                ),
+                                child: ClipOval(
+                                  child: Lottie.asset(
+                                    'assets/animations/home.json',
+                                    fit: BoxFit.contain,
+                                    width: 120,
+                                    height: 120,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 32),
+
+                        // Static title
+                        ShaderMask(
+                          shaderCallback: (bounds) => const LinearGradient(
+                            colors: [Colors.white, Colors.blue, Colors.purple],
+                          ).createShader(bounds),
+                          child: const Text(
+                            'Drowsiness Detection',
+                            style: TextStyle(
+                              fontSize: 32,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                              letterSpacing: -0.5,
                             ),
-                          ),
-                          child: const Icon(
-                            Icons.visibility_outlined,
-                            size: 64,
-                            color: Colors.white,
+                            textAlign: TextAlign.center,
                           ),
                         ),
-                        
-                        const SizedBox(height: 24),
-                        
-                        const Text(
-                          'Drowsiness Detection',
-                          style: TextStyle(
-                            fontSize: 32,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                            letterSpacing: 1.2,
+
+                        const SizedBox(height: 12),
+
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: Colors.blue.withOpacity(0.3),
+                              width: 1,
+                            ),
+                            color: Colors.blue.withOpacity(0.1),
                           ),
-                          textAlign: TextAlign.center,
-                        ),
-                        
-                        const SizedBox(height: 8),
-                        
-                        Text(
-                          'Trained using MRLEYE dataset',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.white.withOpacity(0.8),
-                            letterSpacing: 0.5,
+                          child: const Text(
+                            'Powered by MRLEYE Dataset',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.white70,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5,
+                            ),
+                            textAlign: TextAlign.center,
                           ),
-                          textAlign: TextAlign.center,
                         ),
                       ],
                     ),
                   ),
-                  
+
                   const SizedBox(height: 40),
-                  
-                  // Feature cards
-                  _buildFeatureCard(
-                    icon: Icons.camera_alt_outlined,
-                    title: 'Real-time Monitoring',
-                    description: 'Continuous webcam analysis using advanced computer vision',
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF4FC3F7), Color(0xFF29B6F6)],
-                    ),
+
+                  // Feature cards in a grid layout
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      Expanded(
+                        child: _buildModernFeatureCard(
+                          icon: Icons.camera_enhance_rounded,
+                          title: 'Real-time Monitoring',
+                          description: 'Continuous webcam analysis using advanced computer vision for accurate detection.',
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFF4FC3F7), Color(0xFF29B6F6), Color(0xFF0288D1)],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 20),
+                      Expanded(
+                        child: _buildModernFeatureCard(
+                          icon: Icons.notification_important_rounded,
+                          title: 'Instant Alerts',
+                          description: 'Smart notifications triggered instantly when drowsiness is detected.',
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFFFF7043), Color(0xFFFF5722), Color(0xFFE64A19)],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  _buildFeatureCard(
-                    icon: Icons.warning_amber_outlined,
-                    title: 'Instant Alerts',
-                    description: 'Immediate notifications when drowsiness is detected',
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFFFF7043), Color(0xFFFF5722)],
-                    ),
+
+                  const SizedBox(height: 20),
+
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: _buildModernFeatureCard(
+                          icon: Icons.psychology_rounded,
+                          title: 'AI-Powered Analysis',
+                          description: 'Precise detection using advanced machine learning algorithms.',
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFF66BB6A), Color(0xFF4CAF50), Color(0xFF388E3C)],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  
-                  const SizedBox(height: 16),
-                  
-                 /* _buildFeatureCard(
-                    icon: Icons.psychology_outlined,
-                    title: 'AI-Powered Analysis',
-                    description: 'Machine learning algorithms for accurate detection',
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF66BB6A), Color(0xFF4CAF50)],
-                    ),
-                  ),
-                  */
-                  const SizedBox(height: 40),
-                  
-                  // Start button
+
+                  const SizedBox(height: 50),
+
+                  // Static start button
                   Container(
                     width: double.infinity,
-                    height: 60,
+                    height: 70,
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(30),
+                      borderRadius: BorderRadius.circular(35),
                       gradient: const LinearGradient(
-                        colors: [Color(0xFFFFAB40), Color(0xFFFF9800)],
+                        colors: [Color(0xFF667eea), Color(0xFF764ba2)],
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFFFF9800).withOpacity(0.4),
-                          blurRadius: 12,
-                          offset: const Offset(0, 6),
+                          color: const Color(0xFF667eea).withOpacity(0.5),
+                          blurRadius: 25,
+                          offset: const Offset(0, 10),
+                          spreadRadius: 2,
                         ),
                       ],
                     ),
@@ -142,9 +217,13 @@ class HomeScreen extends StatelessWidget {
                                 const DetectionScreen(),
                             transitionsBuilder: (context, animation, secondaryAnimation, child) {
                               return SlideTransition(
-                                position: animation.drive(
-                                  Tween(begin: const Offset(1.0, 0.0), end: Offset.zero),
-                                ),
+                                position: Tween<Offset>(
+                                  begin: const Offset(1.0, 0.0),
+                                  end: Offset.zero,
+                                ).animate(CurvedAnimation(
+                                  parent: animation,
+                                  curve: Curves.easeOutCubic,
+                                )),
                                 child: child,
                               );
                             },
@@ -155,62 +234,111 @@ class HomeScreen extends StatelessWidget {
                         backgroundColor: Colors.transparent,
                         shadowColor: Colors.transparent,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30),
+                          borderRadius: BorderRadius.circular(35),
                         ),
                       ),
-                      child: const Text(
-                        'Start Detection',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          letterSpacing: 1.0,
-                        ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.play_circle_fill_rounded,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                          SizedBox(width: 16),
+                          Text(
+                            'Start Detection',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                  
-                  const SizedBox(height: 24),
-                  
-                  // Requirements info
+
+                  const SizedBox(height: 40),
+
+                  // Requirements section
                   Container(
-                    padding: const EdgeInsets.all(20),
+                    padding: const EdgeInsets.all(28),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(24),
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Colors.white.withOpacity(0.15),
+                          Colors.white.withOpacity(0.05),
+                        ],
+                      ),
                       border: Border.all(
                         color: Colors.white.withOpacity(0.2),
+                        width: 1,
                       ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
-                            Icon(
-                              Icons.info_outline,
-                              color: Colors.white.withOpacity(0.8),
-                              size: 20,
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [Color(0xFF667eea), Color(0xFF764ba2)],
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(
+                                Icons.settings_rounded,
+                                color: Colors.white,
+                                size: 20,
+                              ),
                             ),
-                            const SizedBox(width: 8),
-                            Text(
+                            const SizedBox(width: 12),
+                            const Text(
                               'System Requirements',
                               style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white.withOpacity(0.9),
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
-                        _buildRequirement('Backend server running on localhost:5000'),
-                        _buildRequirement('Camera access permission'),
-                        _buildRequirement('Good lighting conditions'),
-                        _buildRequirement('Clear face visibility'),
+                        const SizedBox(height: 20),
+                        _buildModernRequirement(
+                          'Backend server running on localhost:5000',
+                          Icons.dns_rounded,
+                        ),
+                        _buildModernRequirement(
+                          'Camera access permission',
+                          Icons.camera_alt_rounded,
+                        ),
+                        _buildModernRequirement(
+                          'Good lighting conditions',
+                          Icons.wb_sunny_rounded,
+                        ),
+                        _buildModernRequirement(
+                          'Clear face visibility',
+                          Icons.face_rounded,
+                        ),
                       ],
                     ),
                   ),
+
+                  const SizedBox(height: 30),
                 ],
               ),
             ),
@@ -220,41 +348,53 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildFeatureCard({
+  Widget _buildModernFeatureCard({
     required IconData icon,
     required String title,
     required String description,
     required Gradient gradient,
   }) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         gradient: gradient,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          ),
+          BoxShadow(
+            color: Colors.white.withOpacity(0.1),
+            blurRadius: 1,
+            offset: const Offset(0, 1),
           ),
         ],
       ),
       child: Row(
         children: [
           Container(
-            width: 50,
-            height: 50,
+            width: 60,
+            height: 60,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(12),
+              color: Colors.white.withOpacity(0.25),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
             child: Icon(
               icon,
               color: Colors.white,
-              size: 24,
+              size: 28,
             ),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 20),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -262,17 +402,20 @@ class HomeScreen extends StatelessWidget {
                 Text(
                   title,
                   style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
                     color: Colors.white,
+                    letterSpacing: -0.2,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 6),
                 Text(
                   description,
                   style: TextStyle(
                     fontSize: 14,
                     color: Colors.white.withOpacity(0.9),
+                    height: 1.4,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
@@ -283,23 +426,32 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildRequirement(String text) {
+  Widget _buildModernRequirement(String text, IconData icon) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
+      padding: const EdgeInsets.only(bottom: 16.0),
       child: Row(
         children: [
-          Icon(
-            Icons.check_circle_outline,
-            color: Colors.white.withOpacity(0.7),
-            size: 16,
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: Colors.green.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              icon,
+              color: Colors.greenAccent,
+              size: 16,
+            ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 16),
           Expanded(
             child: Text(
               text,
               style: TextStyle(
-                fontSize: 14,
-                color: Colors.white.withOpacity(0.8),
+                fontSize: 15,
+                color: Colors.white.withOpacity(0.85),
+                fontWeight: FontWeight.w500,
+                height: 1.3,
               ),
             ),
           ),
@@ -307,4 +459,33 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+// Custom painter for dotted circles (retained for reference, not used in current design)
+class DottedCirclePainter extends CustomPainter {
+  final Color color;
+  final int dotCount;
+
+  DottedCirclePainter({required this.color, this.dotCount = 12});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+
+    for (int i = 0; i < dotCount; i++) {
+      final angle = (2 * math.pi * i) / dotCount;
+      final x = center.dx + radius * 0.8 * math.cos(angle);
+      final y = center.dy + radius * 0.8 * math.sin(angle);
+
+      canvas.drawCircle(Offset(x, y), 2, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

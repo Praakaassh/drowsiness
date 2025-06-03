@@ -1,3 +1,5 @@
+
+
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -9,7 +11,6 @@ import 'dart:html' as html;
 import 'dart:ui_web' as ui_web;
 import 'package:flutter/foundation.dart' show kIsWeb;
 
-
 class DetectionScreen extends StatefulWidget {
   const DetectionScreen({Key? key}) : super(key: key);
 
@@ -17,8 +18,7 @@ class DetectionScreen extends StatefulWidget {
   _DetectionScreenState createState() => _DetectionScreenState();
 }
 
-class _DetectionScreenState extends State<DetectionScreen>
-    with TickerProviderStateMixin {
+class _DetectionScreenState extends State<DetectionScreen> {
   List<dynamic> detectionResults = [];
   String status = "Initializing...";
   bool alert = false;
@@ -27,38 +27,29 @@ class _DetectionScreenState extends State<DetectionScreen>
   Timer? frameTimer;
   String? videoViewId;
   html.MediaStream? mediaStream;
+  html.AudioElement? alertAudio;
+
+  // Scoring system variables
+  double alertnessScore = 10.0; // Start at maximum alertness
+  static const double maxScore = 10.0;
+  static const double minScore = 0.0;
+  static const double alertThreshold = 3.0; // Alert when score drops below this
+  static const double recoveryThreshold = 5.0; // Stop alert when score goes above this
   
-  // Eye closure tracking variables
-  DateTime? eyesClosedStartTime;
-  static const Duration eyesClosedThreshold = Duration(seconds: 5);
-  bool hasPlayedAlert = false;
+  // Score adjustment rates
+  static const double eyesClosedDecrement = 8.0; // Points lost per frame when eyes closed
+  static const double eyesOpenIncrement = 4.0; // Points gained per frame when eyes open
+  static const double yawnDecrement = 5.0; // Additional points lost for yawning
+  static const double blinkRecovery = 2.0; // Small recovery for normal blinking
   
-  late AnimationController _alertAnimationController;
-  late Animation<double> _alertAnimation;
-  late AnimationController _pulseController;
-  late Animation<double> _pulseAnimation;
+  bool isAlertSoundPlaying = false;
+  List<double> recentScores = []; // Track recent scores for smoothing
+  static const int scoreHistoryLength = 5;
 
   @override
   void initState() {
     super.initState();
-    
-    // Initialize animations
-    _alertAnimationController = AnimationController(
-      duration: const Duration(milliseconds: 500),
-      vsync: this,
-    );
-    _alertAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _alertAnimationController, curve: Curves.easeInOut),
-    );
-    
-    _pulseController = AnimationController(
-      duration: const Duration(milliseconds: 1000),
-      vsync: this,
-    );
-    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.2).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
-    
+
     if (kIsWeb) {
       videoViewId = 'webcam-${DateTime.now().millisecondsSinceEpoch}';
       startWebcam();
@@ -97,14 +88,13 @@ class _DetectionScreenState extends State<DetectionScreen>
       );
 
       await videoElement!.onLoadedMetadata.first;
-      
+
       setState(() {
         isLoading = false;
         status = "Camera ready";
       });
 
       startFrameProcessing();
-
     } catch (e) {
       print('Webcam initialization error: $e');
       setState(() {
@@ -127,13 +117,12 @@ class _DetectionScreenState extends State<DetectionScreen>
           width: videoElement!.videoWidth,
           height: videoElement!.videoHeight,
         );
-        
+
         final context = canvas.getContext('2d') as html.CanvasRenderingContext2D;
         context.drawImage(videoElement!, 0, 0);
-        
+
         final imageData = canvas.toDataUrl('image/jpeg', 0.8);
         await processFrame(imageData);
-
       } catch (e) {
         print('Frame processing error: $e');
         setState(() {
@@ -156,47 +145,19 @@ class _DetectionScreenState extends State<DetectionScreen>
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final newAlert = data['alert'] ?? false;
-        
+        final detectionAlert = data['alert'] ?? false;
+
         setState(() {
           detectionResults = data['objects'] ?? [];
           status = data['status'] ?? "No detection";
         });
 
-        // Handle eye closure timing logic
-        if (newAlert) {
-          // Eyes are closed
-          if (eyesClosedStartTime == null) {
-            eyesClosedStartTime = DateTime.now();
-            hasPlayedAlert = false;
-          } else {
-            // Check if eyes have been closed for the threshold duration
-            final closedDuration = DateTime.now().difference(eyesClosedStartTime!);
-            if (closedDuration >= eyesClosedThreshold && !hasPlayedAlert) {
-              playAlertSound();
-              hasPlayedAlert = true;
-            }
-          }
-        } else {
-          // Eyes are open - reset the timer
-          eyesClosedStartTime = null;
-          hasPlayedAlert = false;
-        }
+        // Update alertness score based on detection results
+        updateAlertnessScore(detectionAlert, data);
+        
+        // Handle alert state based on score
+        handleAlertState();
 
-        // Handle alert state changes with animation (for visual feedback only)
-        if (newAlert != alert) {
-          setState(() {
-            alert = newAlert;
-          });
-          
-          if (alert) {
-            _alertAnimationController.forward();
-            _pulseController.repeat(reverse: true);
-          } else {
-            _alertAnimationController.reverse();
-            _pulseController.stop();
-          }
-        }
       } else {
         print('Backend error: ${response.statusCode} - ${response.body}');
         setState(() {
@@ -211,32 +172,124 @@ class _DetectionScreenState extends State<DetectionScreen>
     }
   }
 
-  void playAlertSound() {
-    try {
-      final audio = html.AudioElement()
-        ..src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBziR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmEXBjas6Gmd'
-        ..loop = false;
+  void updateAlertnessScore(bool eyesClosed, Map<String, dynamic> data) {
+    double scoreChange = 0.0;
+
+    if (eyesClosed) {
+      // Eyes are closed - decrease score
+      scoreChange = -eyesClosedDecrement;
       
-      audio.play().catchError((e) {
+      // Check for additional drowsiness indicators
+      if (data.containsKey('yawn_detected') && data['yawn_detected'] == true) {
+        scoreChange -= yawnDecrement;
+      }
+    } else {
+      // Eyes are open - increase score
+      scoreChange = eyesOpenIncrement;
+      
+      // Check if it's a normal blink pattern (eyes were closed briefly)
+      if (recentScores.isNotEmpty && recentScores.last < alertnessScore) {
+        scoreChange += blinkRecovery;
+      }
+    }
+
+    // Apply score change with bounds checking
+    alertnessScore = (alertnessScore + scoreChange).clamp(minScore, maxScore);
+    
+    // Add to recent scores for smoothing and analysis
+    recentScores.add(alertnessScore);
+    if (recentScores.length > scoreHistoryLength) {
+      recentScores.removeAt(0);
+    }
+
+    // Apply smoothing to reduce noise
+    if (recentScores.length >= 3) {
+      alertnessScore = recentScores.reduce((a, b) => a + b) / recentScores.length;
+    }
+
+    print('Alertness Score: ${alertnessScore.toStringAsFixed(1)} (Change: ${scoreChange.toStringAsFixed(1)})');
+  }
+
+  void handleAlertState() {
+    bool shouldAlert = alertnessScore <= alertThreshold;
+    bool shouldStopAlert = alertnessScore >= recoveryThreshold;
+
+    if (shouldAlert && !isAlertSoundPlaying) {
+      startAlertSound();
+      setState(() {
+        alert = true;
+      });
+    } else if (shouldStopAlert && isAlertSoundPlaying) {
+      stopAlertSound();
+      setState(() {
+        alert = false;
+      });
+    }
+  }
+
+  void startAlertSound() {
+    try {
+      if (alertAudio == null) {
+        alertAudio = html.AudioElement()
+          ..src = 'assets/audio/sound.mp3'
+          ..loop = true;
+      }
+
+      alertAudio!.play().catchError((e) {
         print('Error playing alert sound: $e');
       });
+      isAlertSoundPlaying = true;
     } catch (e) {
       print('Alert sound creation error: $e');
+    }
+  }
+
+  void stopAlertSound() {
+    try {
+      if (alertAudio != null && isAlertSoundPlaying) {
+        alertAudio!.pause();
+        alertAudio!.currentTime = 0;
+        isAlertSoundPlaying = false;
+      }
+    } catch (e) {
+      print('Error stopping alert sound: $e');
+    }
+  }
+
+  String getAlertnesStatus() {
+    if (alertnessScore > 7) {
+      return "Alert and Focused";
+    } else if (alertnessScore > 5) {
+      return "Slightly Drowsy";
+    } else if (alertnessScore > 3) {
+      return "Moderately Drowsy";
+    } else {
+      return "DROWSINESS DETECTED - Stay Alert!";
+    }
+  }
+
+  Color getScoreColor() {
+    if (alertnessScore > 7) {
+      return Colors.green;
+    } else if (alertnessScore > 5) {
+      return Colors.yellow;
+    } else if (alertnessScore > 3) {
+      return Colors.orange;
+    } else {
+      return Colors.red;
     }
   }
 
   @override
   void dispose() {
     frameTimer?.cancel();
-    _alertAnimationController.dispose();
-    _pulseController.dispose();
-    
+    stopAlertSound();
+    alertAudio?.remove();
     if (mediaStream != null) {
       mediaStream!.getTracks().forEach((track) {
         track.stop();
       });
     }
-    
     videoElement?.remove();
     super.dispose();
   }
@@ -244,183 +297,289 @@ class _DetectionScreenState extends State<DetectionScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Drowsiness Detection',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ),
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
             colors: [
-              Color(0xFF1565C0),
-              Color(0xFF1976D2),
+              Color(0xFF0a0a0a),
+              Color(0xFF1a1a2e),
+              Color(0xFF16213e),
+              Color(0xFF0f3460),
             ],
+            stops: [0.0, 0.3, 0.7, 1.0],
           ),
         ),
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              children: [
-                // Video feed container
-                Container(
-                  width: 640,
-                  height: 480,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
-                        blurRadius: 20,
-                        offset: const Offset(0, 10),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Header
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 24),
+                        onPressed: () => Navigator.of(context).pop(),
                       ),
+                      const Text(
+                        'Drowsiness Detection',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                      const SizedBox(width: 48),
                     ],
                   ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
-                    child: Stack(
-                      children: [
-                        // Video feed
-                        VideoFeedWidget(
-                          videoViewId: videoViewId,
-                          isLoading: isLoading,
-                          videoElement: videoElement,
-                        ),
-                        
-                        // Bounding boxes overlay
-                        if (!isLoading)
-                          CustomPaint(
-                            size: const Size(640, 480),
-                            painter: BoundingBoxPainter(detectionResults),
-                          ),
-                        
-                        // Animated alert border (subtle visual feedback)
-                        if (alert)
-                          AnimatedBuilder(
-                            animation: _alertAnimation,
-                            builder: (context, child) {
-                              return Container(
-                                width: double.infinity,
-                                height: double.infinity,
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: Colors.red.withOpacity(_alertAnimation.value * 0.8),
-                                    width: 4,
-                                  ),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                              );
-                            },
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-                
-                const SizedBox(height: 24),
-                
-                // Status card with eye closure timing info
-                StatusCard(
-                  status: _getStatusWithTiming(),
-                  alert: alert,
-                  detectionCount: detectionResults.length,
-                ),
-                
-                const SizedBox(height: 24),
-                
-                // Detection stats
-                if (detectionResults.isNotEmpty)
+                  const SizedBox(height: 24),
+
+                  // Alertness Score Display
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(15),
+                      gradient: LinearGradient(
+                        colors: [
+                          getScoreColor().withOpacity(0.2),
+                          getScoreColor().withOpacity(0.1),
+                        ],
                       ),
+                      border: Border.all(color: getScoreColor().withOpacity(0.5), width: 2),
                     ),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Text(
+                          'Alertness Score',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white.withOpacity(0.9),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
                         Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(
-                              Icons.analytics_outlined,
-                              color: Colors.white.withOpacity(0.8),
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
                             Text(
-                              'Detection Details',
+                              '${alertnessScore.toStringAsFixed(1)}',
                               style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white.withOpacity(0.9),
+                                fontSize: 36,
+                                fontWeight: FontWeight.w900,
+                                color: getScoreColor(),
+                              ),
+                            ),
+                            Text(
+                              ' / 10',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.white.withOpacity(0.7),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
-                        ...detectionResults.map((result) {
-                          final objectStatus = result['status'] ?? 'Unknown';
-                          final confidence = result['confidence'] ?? 0.0;
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8.0),
+                        const SizedBox(height: 8),
+                        // Score bar
+                        Container(
+                          width: double.infinity,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(4),
+                            color: Colors.white.withOpacity(0.2),
+                          ),
+                          child: FractionallySizedBox(
+                            alignment: Alignment.centerLeft,
+                            widthFactor: alertnessScore / 10,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(4),
+                                color: getScoreColor(),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // Video feed container
+                  Container(
+                    width: 640,
+                    height: 480,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 15,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                      border: alert
+                          ? Border.all(color: Colors.red.withOpacity(0.8), width: 4)
+                          : Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: Stack(
+                        children: [
+                          // Video feed
+                          VideoFeedWidget(
+                            videoViewId: videoViewId,
+                            isLoading: isLoading,
+                            videoElement: videoElement,
+                          ),
+                          // Bounding boxes overlay
+                          if (!isLoading)
+                            CustomPaint(
+                              size: const Size(640, 480),
+                              painter: BoundingBoxPainter(detectionResults),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // Status card
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Colors.white.withOpacity(0.15),
+                          Colors.white.withOpacity(0.05),
+                        ],
+                      ),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.2),
+                        width: 1,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 15,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: StatusCard(
+                      status: getAlertnesStatus(),
+                      alert: alert,
+                      detectionCount: detectionResults.length,
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // Detection details in grid layout
+                  if (detectionResults.isNotEmpty)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: detectionResults.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        final result = entry.value;
+                        final objectStatus = result['status'] ?? 'Unknown';
+                        final confidence = result['confidence'] ?? 0.0;
+
+                        return Expanded(
+                          child: Container(
+                            margin: EdgeInsets.only(
+                              left: index == 0 ? 0 : 10,
+                              right: index == detectionResults.length - 1 ? 0 : 10,
+                            ),
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  objectStatus.contains('Closed')
+                                      ? Color(0xFFFF7043)
+                                      : Color(0xFF4FC3F7),
+                                  objectStatus.contains('Closed')
+                                      ? Color(0xFFE64A19)
+                                      : Color(0xFF0288D1),
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.2),
+                                  blurRadius: 15,
+                                  offset: const Offset(0, 8),
+                                ),
+                              ],
+                            ),
                             child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text(
-                                  objectStatus,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.white.withOpacity(0.8),
+                                Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.25),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(
+                                    objectStatus.contains('Closed')
+                                        ? Icons.visibility_off_rounded
+                                        : Icons.visibility_rounded,
+                                    color: Colors.white,
+                                    size: 24,
                                   ),
                                 ),
-                                Text(
-                                  '${(confidence * 100).toStringAsFixed(1)}%',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white.withOpacity(0.9),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        objectStatus,
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Confidence: ${(confidence * 100).toStringAsFixed(1)}%',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.white.withOpacity(0.9),
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
                             ),
-                          );
-                        }).toList(),
-                      ],
+                          ),
+                        );
+                      }).toList(),
                     ),
-                  ),
-              ],
+
+                  const SizedBox(height: 30),
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
-  }
-
-  String _getStatusWithTiming() {
-    if (eyesClosedStartTime != null) {
-      final closedDuration = DateTime.now().difference(eyesClosedStartTime!);
-      final remainingSeconds = (eyesClosedThreshold.inSeconds - closedDuration.inSeconds).clamp(0, eyesClosedThreshold.inSeconds);
-      
-      if (remainingSeconds > 0) {
-        return "Eyes closed for ${closedDuration.inSeconds}s (Alert in ${remainingSeconds}s)";
-      } else {
-        return "DROWSINESS DETECTED - Stay Alert!";
-      }
-    }
-    return status;
   }
 }
