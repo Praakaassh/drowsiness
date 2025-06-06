@@ -8,6 +8,8 @@ import 'package:http/http.dart' as http;
 import 'dart:html' as html;
 import 'dart:ui_web' as ui_web;
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:lottie/lottie.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class DetectionScreen extends StatefulWidget {
   const DetectionScreen({Key? key}) : super(key: key);
@@ -29,20 +31,19 @@ class _DetectionScreenState extends State<DetectionScreen> {
   html.MediaStream? mediaStream;
   html.AudioElement? alertAudio;
 
-  // Enhanced scoring system variables with better correlation
+  // Enhanced scoring system variables
   double alertnessScore = 100.0;
   static const double maxScore = 100.0;
   static const double minScore = 0.0;
-  static const double alertThreshold = 3.5;
-  static const double recoveryThreshold = 6.0;
+  static const double alertThreshold = 30.5;
+  static const double recoveryThreshold = 50.0;
   
-  // Updated score adjustment rates for better correlation
-  static const double eyesClosedDecrement = 8.0;      // Increased impact
-  static const double eyesOpenIncrement = 4.0;        // Faster recovery
-  static const double yawnDecrement = 6.0;            // Strong yawn penalty
-  static const double yawnRecovery = 2.0;             // Recovery when yawn stops
-  static const double blinkRecovery = 1.5;            // Small recovery bonus
-  static const double combinedPenalty = 3.0;          // Extra penalty for both
+  static const double eyesClosedDecrement = 9.0;
+  static const double eyesOpenIncrement = 60.0;
+  static const double yawnDecrement = 20.0;
+  static const double yawnRecovery = 20.0;
+  static const double blinkRecovery = 10.5;
+  static const double combinedPenalty = 8.0;
   
   bool isAlertSoundPlaying = false;
   List<double> recentScores = [];
@@ -54,6 +55,14 @@ class _DetectionScreenState extends State<DetectionScreen> {
   static const int yawnConfirmationFrames = 2;
   static const int normalConfirmationFrames = 3;
   
+  // Yawn counting variables
+  List<DateTime> yawnTimestamps = [];
+  int yawnCount = 0;
+  bool wasYawningPreviously = false;
+  static const int yawnLimitPerMinute = 3;
+  bool hasShownYawnWarning = false;
+  bool hasShownZeroScoreWarning = false;
+
   // Correlation tracking
   bool wasYawning = false;
   bool wereEyesClosed = false;
@@ -116,53 +125,53 @@ class _DetectionScreenState extends State<DetectionScreen> {
     }
   }
 
-void startFrameProcessing() {
-  if (frameTimer != null && frameTimer!.isActive) {
-    return;
-  }
-
-  frameTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) async {
-    if (!mounted || videoElement == null) {
-      timer.cancel();
+  void startFrameProcessing() {
+    if (frameTimer != null && frameTimer!.isActive) {
       return;
     }
 
-    try {
-      final width = videoElement!.videoWidth;
-      final height = videoElement!.videoHeight;
-      if (width <= 0 || height <= 0) {
+    frameTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) async {
+      if (!mounted || videoElement == null) {
+        timer.cancel();
         return;
       }
 
-      final canvas = html.CanvasElement()
-        ..width = width
-        ..height = height;
+      try {
+        final width = videoElement!.videoWidth;
+        final height = videoElement!.videoHeight;
+        if (width <= 0 || height <= 0) {
+          return;
+        }
 
-      final context = canvas.getContext('2d');
-      if (context == null || context is! html.CanvasRenderingContext2D) {
-        throw Exception('Failed to get 2D canvas context');
+        final canvas = html.CanvasElement()
+          ..width = width
+          ..height = height;
+
+        final context = canvas.getContext('2d');
+        if (context == null || context is! html.CanvasRenderingContext2D) {
+          throw Exception('Failed to get 2D canvas context');
+        }
+
+        context.drawImage(videoElement!, 0, 0);
+
+        final blob = await canvas.toBlob('image/jpeg', 0.8);
+        if (blob != null) {
+          await processFrame(blob);
+        } else {
+          throw Exception('Failed to create blob from canvas');
+        }
+      } catch (e, stackTrace) {
+        print('Frame processing error: $e\n$stackTrace');
+        setState(() {
+          eyeStatus = 'Error processing frame: $e';
+        });
       }
-
-      context.drawImage(videoElement!, 0, 0);
-
-      final blob = await canvas.toBlob('image/jpeg', 0.8);
-      if (blob != null) {
-        await processFrame(blob);
-      } else {
-        throw Exception('Failed to create blob from canvas');
-      }
-    } catch (e, stackTrace) {
-      print('Frame processing error: $e\n$stackTrace');
-      setState(() {
-        eyeStatus = 'Error processing frame: $e';
-      });
-    }
-  });
-}
+    });
+  }
 
   Future<void> processFrame(html.Blob imageBlob) async {
     try {
-      var request = http.MultipartRequest(
+      final request = http.MultipartRequest(
         'POST',
         Uri.parse('http://localhost:5000/process_frame'),
       );
@@ -194,12 +203,8 @@ void startFrameProcessing() {
           mouthResult = data['mouth'];
         });
 
-        // Update alertness score with enhanced correlation
         updateAlertnessScoreWithCorrelation(data);
-        
-        // Handle alert state based on score
         handleAlertState();
-
       } else {
         print('Backend error: ${response.statusCode} - $responseBody');
         setState(() {
@@ -219,7 +224,6 @@ void startFrameProcessing() {
     bool eyesClosed = eyeStatus == "Closed Eyes";
     bool isYawning = yawnStatus == "Yawning";
 
-    // Handle consecutive frame counting for more stable detection
     if (isYawning) {
       consecutiveYawnFrames++;
       consecutiveNormalFrames = 0;
@@ -230,69 +234,342 @@ void startFrameProcessing() {
       }
     }
 
-    // Confirmed yawn detection
     bool confirmedYawn = consecutiveYawnFrames >= yawnConfirmationFrames;
 
-    // Calculate base score changes
+    if (wasYawningPreviously && !isYawning && confirmedYawn) {
+      yawnCount++;
+      yawnTimestamps.add(DateTime.now());
+      print('Yawn counted. Total yawns: $yawnCount');
+    }
+
+    yawnTimestamps.removeWhere((timestamp) =>
+        DateTime.now().difference(timestamp).inSeconds > 60);
+
+    if (yawnTimestamps.length >= yawnLimitPerMinute && !hasShownYawnWarning) {
+      showYawnWarningDialog();
+      hasShownYawnWarning = true;
+      Future.delayed(const Duration(minutes: 1), () {
+        if (mounted) {
+          setState(() {
+            hasShownYawnWarning = false;
+            yawnTimestamps.clear();
+            yawnCount = 0;
+          });
+        }
+      });
+    }
+
+    wasYawningPreviously = isYawning;
+
     if (eyesClosed) {
       scoreChange -= eyesClosedDecrement;
     } else if (eyeStatus == "Open Eyes") {
       scoreChange += eyesOpenIncrement;
-      
-      // Recovery bonus when eyes were previously closed
       if (wereEyesClosed) {
         scoreChange += blinkRecovery;
       }
     }
 
-    // Handle yawn with confirmation
     if (confirmedYawn) {
       scoreChange -= yawnDecrement;
-      
-      // Recovery when yawning stops
       if (wasYawning && !isYawning) {
         scoreChange += yawnRecovery;
       }
     }
 
-    // CORRELATION: Extra penalty when both eyes closed AND yawning
     if (eyesClosed && confirmedYawn) {
       scoreChange -= combinedPenalty;
       print('SEVERE DROWSINESS: Both eyes closed and yawning detected!');
     }
 
-    // CORRELATION: Faster recovery when both indicators are good
     if (eyeStatus == "Open Eyes" && !confirmedYawn) {
-      if ((wereEyesClosed || wasYawning)) {
-        scoreChange += 1.0; // Bonus for full recovery
+      if (wereEyesClosed || wasYawning) {
+        scoreChange += 1.0;
       }
     }
 
-    // Apply progressive penalties - more severe as score gets lower
     if (alertnessScore <= 4.0 && (eyesClosed || confirmedYawn)) {
-      scoreChange -= 1.0; // Extra penalty when already drowsy
+      scoreChange -= 1.0;
     }
 
-    // Apply score change with bounds checking
     alertnessScore = (alertnessScore + scoreChange).clamp(minScore, maxScore);
     
-    // Add to recent scores for smoothing
+    if (alertnessScore == 0 && !hasShownZeroScoreWarning) {
+      showZeroScoreWarningDialog();
+      hasShownZeroScoreWarning = true;
+      Future.delayed(const Duration(minutes: 1), () {
+        if (mounted) {
+          setState(() {
+            hasShownZeroScoreWarning = false;
+          });
+        }
+      });
+    }
+
     recentScores.add(alertnessScore);
     if (recentScores.length > scoreHistoryLength) {
       recentScores.removeAt(0);
     }
 
-    // Apply smoothing to reduce noise
     if (recentScores.length >= 3) {
       double smoothedScore = recentScores.reduce((a, b) => a + b) / recentScores.length;
       alertnessScore = smoothedScore;
     }
 
-    // Update correlation tracking
     wasYawning = confirmedYawn;
     wereEyesClosed = eyesClosed;
 
     print('Alertness Score: ${alertnessScore.toStringAsFixed(1)} | Eyes: $eyeStatus | Yawn: ${confirmedYawn ? "CONFIRMED" : yawnStatus} | Change: ${scoreChange.toStringAsFixed(1)}');
+  }
+
+  void showZeroScoreWarningDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          elevation: 10,
+          backgroundColor: Colors.transparent,
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF1a1a2e),
+                  Color(0xFF0f3460),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Transform.scale(
+                  scale: 1.1,
+                  child: Lottie.asset(
+                    'assets/animations/sleep.json',
+                    fit: BoxFit.contain,
+                    width: 180,
+                    height: 180,
+                    repeat: true,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Critical Alert!',
+                  style: GoogleFonts.roboto(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.redAccent,
+                    letterSpacing: 0.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'You are extremely drowsy and unfit to drive. Please take a break immediately!',
+                  style: GoogleFonts.roboto(
+                    fontSize: 16,
+                    color: Colors.white,
+                    height: 1.4,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.redAccent,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 5,
+                      ),
+                      child: Text(
+                        'OK',
+                        style: GoogleFonts.roboto(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    OutlinedButton(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        frameTimer?.cancel();
+                        Future.delayed(const Duration(minutes: 5), () {
+                          if (mounted) startFrameProcessing();
+                        });
+                      },
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.white, width: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(
+                        'Snooze (5 min)',
+                        style: GoogleFonts.roboto(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void showYawnWarningDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          elevation: 10,
+          backgroundColor: Colors.transparent,
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFFFFB74D),
+                  Color(0xFFe65100),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Transform.scale(
+                  scale: 1.1,
+                  child: Lottie.asset(
+                    'assets/animations/yawn.json',
+                    fit: BoxFit.contain,
+                    width: 180,
+                    height: 180,
+                    repeat: true,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Frequent Yawning Alert!',
+                  style: GoogleFonts.roboto(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                    letterSpacing: 0.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'You have yawned 3 times in a minute. Take a break to stay alert!',
+                  style: GoogleFonts.roboto(
+                    fontSize: 16,
+                    color: Colors.white,
+                    height: 1.4,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.black87,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 5,
+                      ),
+                      child: Text(
+                        'OK',
+                        style: GoogleFonts.roboto(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    OutlinedButton(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        frameTimer?.cancel();
+                        Future.delayed(const Duration(minutes: 5), () {
+                          if (mounted) startFrameProcessing();
+                        });
+                      },
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.white, width: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(
+                        'Snooze (5 min)',
+                        style: GoogleFonts.roboto(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void handleAlertState() {
@@ -345,15 +622,14 @@ void startFrameProcessing() {
     bool eyesClosed = eyeStatus == "Closed Eyes";
     bool confirmedYawn = consecutiveYawnFrames >= yawnConfirmationFrames;
     
-    // Provide contextual status based on correlation
-    if (alertnessScore > 7) {
+    if (alertnessScore > 70) {
       return "Alert and Focused";
-    } else if (alertnessScore > 5) {
+    } else if (alertnessScore > 50) {
       if (confirmedYawn || eyesClosed) {
         return "Mild Drowsiness - Stay Alert";
       }
       return "Slightly Drowsy";
-    } else if (alertnessScore > 3) {
+    } else if (alertnessScore > 30) {
       if (eyesClosed && confirmedYawn) {
         return "SEVERE DROWSINESS - Multiple Signs!";
       } else if (eyesClosed) {
@@ -368,11 +644,11 @@ void startFrameProcessing() {
   }
 
   Color getScoreColor() {
-    if (alertnessScore > 7) {
+    if (alertnessScore > 70) {
       return Colors.green;
-    } else if (alertnessScore > 5) {
+    } else if (alertnessScore > 50) {
       return Colors.yellow;
-    } else if (alertnessScore > 3) {
+    } else if (alertnessScore > 30) {
       return Colors.orange;
     } else {
       return Colors.red;
@@ -443,7 +719,6 @@ void startFrameProcessing() {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Header
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -464,8 +739,6 @@ void startFrameProcessing() {
                     ],
                   ),
                   const SizedBox(height: 24),
-
-                  // Enhanced Alertness Score Display with correlation info
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
@@ -511,7 +784,6 @@ void startFrameProcessing() {
                           ],
                         ),
                         const SizedBox(height: 8),
-                        // Score bar
                         Container(
                           width: double.infinity,
                           height: 8,
@@ -530,7 +802,6 @@ void startFrameProcessing() {
                             ),
                           ),
                         ),
-                        // Correlation indicators
                         const SizedBox(height: 8),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -566,10 +837,7 @@ void startFrameProcessing() {
                       ],
                     ),
                   ),
-
                   const SizedBox(height: 24),
-
-                  // Video feed container
                   Container(
                     width: 640,
                     height: 480,
@@ -604,10 +872,7 @@ void startFrameProcessing() {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 24),
-
-                  // Enhanced Status card
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
@@ -626,7 +891,7 @@ void startFrameProcessing() {
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.2),
+                          color: Colors.black.withOpacity(0.3),
                           blurRadius: 15,
                           offset: const Offset(0, 8),
                         ),
@@ -638,13 +903,9 @@ void startFrameProcessing() {
                       detectionCount: combinedResults.length,
                     ),
                   ),
-
                   const SizedBox(height: 24),
-
-                  // Detection status row (removed percentages)
                   Row(
                     children: [
-                      // Eye status
                       Expanded(
                         child: Container(
                           padding: const EdgeInsets.all(20),
@@ -715,10 +976,7 @@ void startFrameProcessing() {
                           ),
                         ),
                       ),
-                      
                       const SizedBox(width: 16),
-                      
-                      // Yawn status (removed percentage)
                       Expanded(
                         child: Container(
                           padding: const EdgeInsets.all(20),
@@ -775,9 +1033,7 @@ void startFrameProcessing() {
                                       ),
                                     ),
                                     Text(
-                                      mouthResult != null 
-                                          ? 'Mouth detected'
-                                          : 'No mouth detected',
+                                      'Yawns this minute: $yawnCount',
                                       style: TextStyle(
                                         fontSize: 14,
                                         color: Colors.white.withOpacity(0.9),
@@ -793,7 +1049,6 @@ void startFrameProcessing() {
                       ),
                     ],
                   ),
-
                   const SizedBox(height: 30),
                 ],
               ),

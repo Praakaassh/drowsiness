@@ -40,6 +40,7 @@ dependencies:
   permission_handler: ^12.0.0+1
   lottie: ^3.3.1
   delightful_toast: ^1.1.0
+  google_fonts: ^6.2.1
 
 dev_dependencies:
   flutter_test:
@@ -67,6 +68,8 @@ flutter:
   assets:
     - assets/animations/home.json
     - assets/audio/sound.mp3
+    - assets/animations/sleep.json
+    - assets/animations/yawn.json
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
