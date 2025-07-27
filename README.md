@@ -1,16 +1,38 @@
-# flutter_application_1
+# 😴 Drowsiness Detection
 
-A new Flutter project.
+A Drowsiness Detection Website using Deep Learning, developed as part of an internship at Richinnovations, in collaboration with my teammate Subin Raj.
+This web-based system detects signs of driver drowsiness like closed eyes and yawning in real-time, using webcam input and computer vision techniques.
 
-## Getting Started
+## 🔍 Features
+👁️ Eye State Detection using a deep learning model (TensorFlow)
+😮 Yawn Detection using Mediapipe facial landmarks
+🎥 Real-time webcam input handled by a Flask backend
+🌐 Flutter Web frontend for user interface
 
-This project is a starting point for a Flutter application.
+## TechStack
+- **Frontend:** Flutter Web  
+- **Backend:** Python, Flask  
+- **ML Tools:** TensorFlow, OpenCV, Mediapipe
 
-A few resources to get you started if this is your first Flutter project:
+## 🚀 Getting Started
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+### 1. Clone the Repository
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```bash
+git clone https://github.com/Praakaassh/drowsiness.git
+cd drowsiness
+```
+### 2. Run the Flask Server
+Make sure you have **Python 3** installed. If you encounter any errors related to missing libraries (like `flask`, `opencv-python`, `tensorflow`, or `mediapipe` etc), you can install them using:
+
+```bash
+pip install flask opencv-python tensorflow mediapipe
+```
+### 3. Run the Flutter Web App
+Make sure you have **Flutter** installed and set up for web development.
+```bash
+flutter pub get
+flutter run -d chrome
+```
+
+
