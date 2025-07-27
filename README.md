@@ -23,8 +23,12 @@ git clone https://github.com/Praakaassh/drowsiness.git
 cd drowsiness
 ```
 ### 2. Run the Flask Server
-Make sure you have **Python 3** installed. If you encounter any errors related to missing libraries (like `flask`, `opencv-python`, `tensorflow`, or `mediapipe` etc), you can install them using:
-
+The necessary ML models (eyes.h5 and yawn_model.h5) are already available in the Backend Models And Server folder.
+- To start the Flask server, go to the Backend Models And Server folder and run:
+```bash
+python server.py
+```
+Make sure you have **Python 3** installed. If you encounter any errors related to missing libraries (like `flask`, `opencv-python`, `tensorflow`, `mediapipe`, etc.), you can install them using:
 ```bash
 pip install flask opencv-python tensorflow mediapipe
 ```
