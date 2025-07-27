@@ -38,7 +38,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
   static const double alertThreshold = 30.5;
   static const double recoveryThreshold = 50.0;
   
-  static const double eyesClosedDecrement = 9.0;
+  static const double eyesClosedDecrement = 25.0;
   static const double eyesOpenIncrement = 60.0;
   static const double yawnDecrement = 20.0;
   static const double yawnRecovery = 20.0;
