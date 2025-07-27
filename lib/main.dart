@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/homescreen.dart';
-
+import 'package:flutter_application_1/njn%20monna.dart';
 
 void main() {
   runApp(const MyApp());
@@ -25,7 +25,8 @@ class MyApp extends StatelessWidget {
           elevation: 0,
           centerTitle: true,
         ),
-        cardTheme: CardTheme(
+
+        cardTheme: CardThemeData(
           elevation: 8,
           shadowColor: Colors.black26,
           shape: RoundedRectangleBorder(
@@ -33,7 +34,7 @@ class MyApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const HomeScreen(),
+      home: const AboutPage(),
     );
   }
 }
